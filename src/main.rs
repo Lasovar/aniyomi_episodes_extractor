@@ -1,9 +1,8 @@
 use clap::{Parser};
 
 #[derive(Parser, Debug)]
-#[command(name = "aee", version = "0.1.0", about = "A command-line tool use to extract anime episodes from an Aniyomi structured folder")]
+#[command(name = "aee", version = "0.2.0", about = "A command-line tool use to extract anime episodes from an Aniyomi structured folder")]
 struct Cli {
-    name: Option<String>,
     #[arg(short, long)]
     verbose: bool,
     #[command(subcommand)]
@@ -16,6 +15,10 @@ enum Commands {
     Extract {
         #[arg(short, long, default_value = ".", help = "the anime library folder to extract from")]
         target: String,
+        #[arg(short, long, help = "extract episodes from subfolders rather the main folder")]
+        sub: bool,
+        #[arg(short, long, help = "automatically confirm all prompts")]
+        yes: bool,
     },
 }
 
@@ -26,24 +29,54 @@ fn main() -> Result<(), std::io::Error> {
     }
 
     match &cli.command {
-        Some(Commands::Extract { target }) => extract(target),
-        None => {
-            if let Some(name) = &cli.name.as_deref() {
-                println!("Hello, {}!", name);
-            } else {
-                println!("No name provided. Use --help for more information.");
+        Some(Commands::Extract { target, sub, yes }) =>{
+            if !*sub {
+                return extract_from_string(target, *yes);
             }
+
+            let directory_path = std::path::Path::new(target);
+
+            let mut to_be_moved = vec![];
+            for entry in std::fs::read_dir(directory_path)? {
+                let path = entry?.path();
+                if !path.is_dir() {
+                    continue;
+                }
+
+                println!("Found `{}`", path.display());
+                to_be_moved.push(path);
+            }
+
+            println!("Found {} directories.", to_be_moved.len());
+
+            if !*yes && !ask_confirm("\nThe following directories will be processed... do you want to proceed?") {
+                println!("Operation cancelled by user.");
+                return Ok(())
+            }
+
+            for path in to_be_moved {
+                extract(&path, true)?;
+                println!("Extracted `{}`\n", path.display());
+            }
+
+            Ok(())
+        },
+        None => {
+            println!("No name provided. Use --help for more information.");
 
             Ok(())
         }
     }
 }
 
-fn extract(target: &String) -> Result<(), std::io::Error> {
+fn extract_from_string(target: &String, auto_confirm: bool) -> Result<(), std::io::Error> {
     let directory = std::path::Path::new(target);
+    extract(directory, auto_confirm)
+}
 
+fn extract(target: &std::path::Path, auto_confirm: bool) -> Result<(), std::io::Error> {
     let mut to_be_moved = vec![];
-    for entry in  std::fs::read_dir(directory)? {
+    for entry in  std::fs::read_dir(target)? {
         let path = entry?.path();
         if !path.is_dir() {
             continue;
@@ -65,14 +98,15 @@ fn extract(target: &String) -> Result<(), std::io::Error> {
         return Ok(())
     }
 
-    if !ask_confirm("\nThe following episodes will be processed... do you want to proceed?") {
+    if !auto_confirm && !ask_confirm("\nThe following episodes will be processed... do you want to proceed?")
+    {
         println!("Operation cancelled by user.");
         return Ok(())
     }
 
     for file_path in &to_be_moved {
         if let Some(file_name) = file_path.file_name() {
-            let new_path = directory.join(file_name);
+            let new_path = target.join(file_name);
             std::fs::rename(&file_path, &new_path)?;
             if let Some(parent) = file_path.parent() {
                 std::fs::remove_dir_all(&parent)?;
