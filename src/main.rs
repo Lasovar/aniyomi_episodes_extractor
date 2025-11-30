@@ -12,12 +12,9 @@ struct Cli {
 
 #[derive(Debug, clap::Subcommand)]
 enum Commands {
-    Hello {
-        #[arg(default_value = "world")]
-        target: String
-    },
+    /// Extract anime episodes from the specified library folder
     Extract {
-        #[arg(short, long, default_value = ".")]
+        #[arg(short, long, default_value = ".", help = "the anime library folder to extract from")]
         target: String,
     },
 }
@@ -29,10 +26,6 @@ fn main() -> Result<(), std::io::Error> {
     }
 
     match &cli.command {
-        Some(Commands::Hello { target}) => {
-            println!("Hello, {}!", target);
-            Ok(())
-        }
         Some(Commands::Extract { target }) => extract(target),
         None => {
             if let Some(name) = &cli.name.as_deref() {
@@ -81,7 +74,9 @@ fn extract(target: &String) -> Result<(), std::io::Error> {
         if let Some(file_name) = file_path.file_name() {
             let new_path = directory.join(file_name);
             std::fs::rename(&file_path, &new_path)?;
-            std::fs::remove_dir_all(&file_path.parent().unwrap())?;
+            if let Some(parent) = file_path.parent() {
+                std::fs::remove_dir_all(&parent)?;
+            }
         }
     }
 
